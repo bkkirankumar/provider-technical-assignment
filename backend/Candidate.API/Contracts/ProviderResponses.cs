@@ -26,7 +26,21 @@ public sealed record LicenseResponse(
     Guid Id,
     string Number,
     string Status,
-    DateOnly ExpirationDate);
+    string StoredStatus,
+    DateOnly ExpirationDate,
+    DateTimeOffset UpdatedAtUtc,
+    bool IsDeleted,
+    DateTimeOffset? DeletedAtUtc);
+
+public sealed record DeletedLicenseResponse(
+    Guid Id,
+    Guid ProviderId,
+    string Number,
+    string StoredStatus,
+    DateOnly ExpirationDate,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    DateTimeOffset? DeletedAtUtc);
 
 public static class ProviderResponseMapper
 {
@@ -56,7 +70,11 @@ public static class ProviderResponseMapper
                 license.Id,
                 license.Number,
                 GetEffectiveLicenseStatus(license, today),
-                license.ExpirationDate))
+                license.Status,
+                license.ExpirationDate,
+                license.UpdatedAtUtc,
+                license.IsDeleted,
+                license.DeletedAtUtc))
             .ToList();
 
         return new ProviderDetailsResponse(
@@ -70,7 +88,7 @@ public static class ProviderResponseMapper
             licenses);
     }
 
-    private static string GetEffectiveLicenseStatus(License license, DateOnly today)
+    public static string GetEffectiveLicenseStatus(License license, DateOnly today)
     {
         if (license.Status == LicenseStatuses.Suspended)
         {

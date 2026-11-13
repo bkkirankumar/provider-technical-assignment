@@ -25,14 +25,21 @@ public sealed class CandidateDbContext(DbContextOptions<CandidateDbContext> opti
         modelBuilder.Entity<License>(entity =>
         {
             entity.HasKey(license => license.Id);
-            entity.Property(license => license.Number).HasMaxLength(40).IsRequired();
+            entity.Property(license => license.Number)
+                .HasMaxLength(40)
+                .UseCollation("NOCASE")
+                .IsRequired();
             entity.Property(license => license.Status).HasMaxLength(20).IsRequired();
-            entity.HasIndex(license => new { license.ProviderId, license.Number }).IsUnique();
+            entity.HasIndex(license => new { license.ProviderId, license.Number })
+                .IsUnique()
+                .HasFilter("\"IsDeleted\" = 0");
             entity.HasOne(license => license.Provider)
                 .WithMany(provider => provider.Licenses)
                 .HasForeignKey(license => license.ProviderId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasQueryFilter(license => !license.Provider.IsDeleted);
+            entity.HasQueryFilter(license =>
+                !license.IsDeleted &&
+                !license.Provider.IsDeleted);
         });
     }
 }

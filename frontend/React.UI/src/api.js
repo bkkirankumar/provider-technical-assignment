@@ -66,3 +66,23 @@ export function updateProvider(id, provider) {
 export function deleteProvider(id) {
   return request(`/providers/${id}`, { method: 'DELETE' })
 }
+
+export function createLicense(providerId, license) {
+  return request(`/providers/${providerId}/licenses`, {
+    method: 'POST',
+    body: JSON.stringify(license),
+  })
+}
+
+export function updateLicense(providerId, licenseId, license) {
+  return request(`/providers/${providerId}/licenses/${licenseId}`, {
+    method: 'PUT',
+    body: JSON.stringify(license),
+  })
+}
+
+export function deleteLicense(providerId, licenseId) {
+  return request(`/providers/${providerId}/licenses/${licenseId}`, {
+    method: 'DELETE',
+  })
+}

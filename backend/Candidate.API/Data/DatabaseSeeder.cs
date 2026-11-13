@@ -79,7 +79,8 @@ public static class DatabaseSeeder
             Number = number,
             Status = status,
             ExpirationDate = expirationDate,
-            CreatedAtUtc = createdAtUtc
+            CreatedAtUtc = createdAtUtc,
+            UpdatedAtUtc = createdAtUtc
         };
     }
 }

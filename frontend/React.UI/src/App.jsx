@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
+  createLicense,
   createProvider,
+  deleteLicense,
   deleteProvider,
   getProvider,
   getProviders,
+  updateLicense,
   updateProvider,
 } from './api.js'
 import './App.css'
@@ -12,6 +15,16 @@ const emptyProvider = {
   name: '',
   county: '',
   status: 'Active',
+}
+
+function getDefaultExpirationDate() {
+  const date = new Date()
+  date.setFullYear(date.getFullYear() + 1)
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 const scenarios = [
@@ -37,12 +50,19 @@ function App() {
   const [search, setSearch] = useState('')
   const [scenario, setScenario] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const [detailsReloadKey, setDetailsReloadKey] = useState(0)
   const [editingProvider, setEditingProvider] = useState(null)
   const [providerToDelete, setProviderToDelete] = useState(null)
+  const [editingLicense, setEditingLicense] = useState(null)
+  const [licenseToDelete, setLicenseToDelete] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [savingLicense, setSavingLicense] = useState(false)
+  const [deletingLicense, setDeletingLicense] = useState(false)
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
+  const [licenseFormError, setLicenseFormError] = useState('')
+  const [licenseDeleteError, setLicenseDeleteError] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -101,7 +121,7 @@ function App() {
 
     loadProviderDetails()
     return () => controller.abort()
-  }, [selectedProviderId])
+  }, [selectedProviderId, detailsReloadKey])
 
   function showProvider(providerId) {
     setSelectedProviderId(providerId)
@@ -165,6 +185,72 @@ function App() {
       setDeleteError(error.message)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  function openCreateLicenseForm() {
+    setLicenseFormError('')
+    setEditingLicense({
+      providerId: selectedProvider.id,
+      id: null,
+      number: '',
+      status: 'Active',
+      expirationDate: getDefaultExpirationDate(),
+    })
+  }
+
+  function openEditLicenseForm(license) {
+    setLicenseFormError('')
+    setEditingLicense({
+      providerId: selectedProvider.id,
+      id: license.id,
+      number: license.number,
+      status: license.storedStatus,
+      expirationDate: license.expirationDate,
+    })
+  }
+
+  async function saveLicense(event) {
+    event.preventDefault()
+    setSavingLicense(true)
+    setLicenseFormError('')
+
+    const license = {
+      number: editingLicense.number.trim(),
+      status: editingLicense.status,
+      expirationDate: editingLicense.expirationDate,
+    }
+
+    try {
+      if (editingLicense.id) {
+        await updateLicense(editingLicense.providerId, editingLicense.id, license)
+      } else {
+        await createLicense(editingLicense.providerId, license)
+      }
+
+      setEditingLicense(null)
+      setReloadKey((current) => current + 1)
+      setDetailsReloadKey((current) => current + 1)
+    } catch (error) {
+      setLicenseFormError(error.message)
+    } finally {
+      setSavingLicense(false)
+    }
+  }
+
+  async function confirmDeleteLicense() {
+    setDeletingLicense(true)
+    setLicenseDeleteError('')
+
+    try {
+      await deleteLicense(licenseToDelete.providerId, licenseToDelete.license.id)
+      setLicenseToDelete(null)
+      setReloadKey((current) => current + 1)
+      setDetailsReloadKey((current) => current + 1)
+    } catch (error) {
+      setLicenseDeleteError(error.message)
+    } finally {
+      setDeletingLicense(false)
     }
   }
 
@@ -302,6 +388,16 @@ function App() {
             <ProviderDetails
               provider={selectedProvider}
               onEdit={() => openEditForm(selectedProvider)}
+              onAddLicense={openCreateLicenseForm}
+              onEditLicense={openEditLicenseForm}
+              onDeleteLicense={(license) => {
+                setLicenseDeleteError('')
+                setLicenseToDelete({
+                  providerId: selectedProvider.id,
+                  providerName: selectedProvider.name,
+                  license,
+                })
+              }}
             />
           )}
         </aside>
@@ -325,6 +421,28 @@ function App() {
           error={deleteError}
           onCancel={() => setProviderToDelete(null)}
           onConfirm={confirmDelete}
+        />
+      )}
+
+      {editingLicense && (
+        <LicenseForm
+          license={editingLicense}
+          saving={savingLicense}
+          error={licenseFormError}
+          onChange={setEditingLicense}
+          onClose={() => setEditingLicense(null)}
+          onSubmit={saveLicense}
+        />
+      )}
+
+      {licenseToDelete && (
+        <LicenseDeleteConfirmation
+          providerName={licenseToDelete.providerName}
+          license={licenseToDelete.license}
+          deleting={deletingLicense}
+          error={licenseDeleteError}
+          onCancel={() => setLicenseToDelete(null)}
+          onConfirm={confirmDeleteLicense}
         />
       )}
     </main>
@@ -375,7 +493,13 @@ function ProviderRow({ provider, selected, onSelect, onEdit, onDelete }) {
   )
 }
 
-function ProviderDetails({ provider, onEdit }) {
+function ProviderDetails({
+  provider,
+  onEdit,
+  onAddLicense,
+  onEditLicense,
+  onDeleteLicense,
+}) {
   return (
     <div className="provider-details">
       <div className="details-heading">
@@ -399,6 +523,9 @@ function ProviderDetails({ provider, onEdit }) {
           <h3>Licenses</h3>
           <p>{provider.licenses.length} associated with this provider</p>
         </div>
+        <button className="button button-secondary" onClick={onAddLicense}>
+          Add license
+        </button>
       </div>
 
       {provider.licenses.length === 0 ? (
@@ -407,13 +534,29 @@ function ProviderDetails({ provider, onEdit }) {
         <ul className="license-list">
           {provider.licenses.map((license) => (
             <li className="license-card" key={license.id}>
-              <div>
+              <div className="license-card-main">
                 <strong>{license.number}</strong>
                 <span>Expires {formatDate(license.expirationDate)}</span>
               </div>
-              <span className={`license-status license-${license.status.toLowerCase()}`}>
-                {license.status}
-              </span>
+              <div className="license-card-actions">
+                <span className={`license-status license-${license.status.toLowerCase()}`}>
+                  {license.status}
+                </span>
+                <button
+                  className="icon-button"
+                  onClick={() => onEditLicense(license)}
+                  aria-label={`Edit license ${license.number}`}
+                >
+                  Edit
+                </button>
+                <button
+                  className="icon-button icon-button-danger"
+                  onClick={() => onDeleteLicense(license)}
+                  aria-label={`Delete license ${license.number}`}
+                >
+                  Delete
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -492,6 +635,77 @@ function ProviderForm({ provider, saving, error, onChange, onClose, onSubmit }) 
   )
 }
 
+function LicenseForm({ license, saving, error, onChange, onClose, onSubmit }) {
+  const isEditing = Boolean(license.id)
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="license-form-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">{isEditing ? 'UPDATE RECORD' : 'NEW RECORD'}</p>
+            <h2 id="license-form-title">
+              {isEditing ? 'Edit license' : 'Add license'}
+            </h2>
+          </div>
+          <button className="close-button" onClick={onClose} aria-label="Close form">
+            ×
+          </button>
+        </div>
+        <form onSubmit={onSubmit}>
+          <label className="form-field">
+            <span>License number</span>
+            <input
+              required
+              minLength="2"
+              maxLength="40"
+              value={license.number}
+              onChange={(event) => onChange({ ...license, number: event.target.value })}
+              autoFocus
+            />
+          </label>
+          <label className="form-field">
+            <span>License status</span>
+            <select
+              value={license.status}
+              onChange={(event) => onChange({ ...license, status: event.target.value })}
+            >
+              <option>Active</option>
+              <option>Suspended</option>
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Expiration date</span>
+            <input
+              required
+              type="date"
+              value={license.expirationDate}
+              onChange={(event) => onChange({
+                ...license,
+                expirationDate: event.target.value,
+              })}
+            />
+          </label>
+          {error && <div className="notice notice-error" role="alert">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="button button-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="button button-primary" disabled={saving}>
+              {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Create license'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function DeleteConfirmation({ provider, deleting, error, onCancel, onConfirm }) {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -519,6 +733,47 @@ function DeleteConfirmation({ provider, deleting, error, onCancel, onConfirm }) 
             disabled={deleting}
           >
             {deleting ? 'Removing…' : 'Soft delete provider'}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function LicenseDeleteConfirmation({
+  providerName,
+  license,
+  deleting,
+  error,
+  onCancel,
+  onConfirm,
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="modal modal-confirmation"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-license-title"
+        aria-describedby="delete-license-description"
+      >
+        <div className="confirmation-icon" aria-hidden="true">!</div>
+        <h2 id="delete-license-title">Remove this license?</h2>
+        <p id="delete-license-description">
+          License <strong>{license.number}</strong> will be hidden from the license
+          list for {providerName}. Its record will be retained for audit purposes.
+        </p>
+        {error && <div className="notice notice-error" role="alert">{error}</div>}
+        <div className="modal-actions">
+          <button className="button button-secondary" onClick={onCancel} disabled={deleting}>
+            Keep license
+          </button>
+          <button
+            className="button button-danger"
+            onClick={onConfirm}
+            disabled={deleting}
+          >
+            {deleting ? 'Removing…' : 'Soft delete license'}
           </button>
         </div>
       </section>
